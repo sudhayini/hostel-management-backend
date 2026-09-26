@@ -5,7 +5,7 @@ const roleMiddleware = require("../middleware/roleMiddleware");
 const router = express.Router();
 
 // fetch all rooms
-router.get("/", authMiddleware, async (req, res) => {
+router.get("/",async (req, res) => {
   try {
     const rooms = await Room.find();
     res.json(rooms);
