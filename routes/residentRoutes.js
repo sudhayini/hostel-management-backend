@@ -115,7 +115,7 @@ router.put(
 router.delete(
   "/:id",
   authMiddleware,
-  roleMiddleware("admin", "staff"),
+  roleMiddleware("admin"),
   async (req, res) => {
     try {
       const resident = await Resident.findByIdAndDelete(
