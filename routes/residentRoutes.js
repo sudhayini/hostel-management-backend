@@ -78,7 +78,7 @@ router.post(
       console.log("Resident creation error:", error);
 
   res.status(400).json({
-    message: "Failed to create resident",
+    message: error.message ||"Failed to create resident",
   });
     }
   }
