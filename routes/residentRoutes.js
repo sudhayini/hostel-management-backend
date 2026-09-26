@@ -118,9 +118,8 @@ router.delete(
   roleMiddleware("admin"),
   async (req, res) => {
     try {
-      const resident = await Resident.findByIdAndDelete(
-        req.params.id
-      );
+      // Find resident first
+      const resident = await Resident.findById(req.params.id);
 
       if (!resident) {
         return res.status(404).json({
@@ -128,15 +127,27 @@ router.delete(
         });
       }
 
+      // Delete resident login account
+      await User.findOneAndDelete({
+        email: resident.email,
+        role: "resident",
+      });
+
+      // Delete resident record
+      await Resident.findByIdAndDelete(req.params.id);
+
       res.json({
-        message: "Resident deleted successfully",
+        message: "Resident and login account deleted successfully",
       });
     } catch (error) {
+      console.log("Delete resident error:", error);
+
       res.status(400).json({
-        message: "Failed to delete resident",
+        message: error.message || "Failed to delete resident",
       });
     }
   }
 );
+
 
 module.exports = router;
