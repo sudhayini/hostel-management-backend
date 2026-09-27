@@ -9,19 +9,23 @@ const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-
-// GET all residents
+// get all resident
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const residents = await Resident.find();
+
     res.json(residents);
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch residents" });
+    console.log("Fetch residents error:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch residents",
+    });
   }
 });
 
 
-// POST new resident
+//create a resident
 router.post(
   "/",
   authMiddleware,
@@ -37,7 +41,7 @@ router.post(
         roomNumber,
       } = req.body;
 
-      // Check if a login account already exists
+      // Check if login account already exists
       const existingUser = await User.findOne({ email });
 
       if (existingUser) {
@@ -77,13 +81,15 @@ router.post(
     } catch (error) {
       console.log("Resident creation error:", error);
 
-  res.status(400).json({
-    message: error.message ||"Failed to create resident",
-  });
+      res.status(400).json({
+        message: error.message || "Failed to create resident",
+      });
     }
   }
 );
-// PUT update resident
+
+
+// update 
 router.put(
   "/:id",
   authMiddleware,
@@ -93,7 +99,9 @@ router.put(
       const resident = await Resident.findByIdAndUpdate(
         req.params.id,
         req.body,
-        { new: true }
+        {
+          new: true,
+        }
       );
 
       if (!resident) {
@@ -104,14 +112,18 @@ router.put(
 
       res.json(resident);
     } catch (error) {
+      console.log("Update resident error:", error);
+
       res.status(400).json({
-        message: "Failed to update resident",
+        message: error.message || "Failed to update resident",
       });
     }
   }
 );
 
-// DELETE resident
+
+
+// delete resident (Admin only)
 router.delete(
   "/:id",
   authMiddleware,
@@ -127,17 +139,42 @@ router.delete(
         });
       }
 
-      // Delete resident login account
-      await User.findOneAndDelete({
+      console.log("Deleting resident:", resident.name);
+      console.log("Resident email:", resident.email);
+
+      // Find the resident's login account
+      const user = await User.findOne({
         email: resident.email,
         role: "resident",
       });
 
+      console.log("Resident user found:", user);
+
+      // Delete resident login account
+      if (user) {
+        await User.findByIdAndDelete(user._id);
+
+        console.log(
+          "Resident login account deleted:",
+          user.email
+        );
+      } else {
+        console.log(
+          "No matching resident login account found"
+        );
+      }
+
       // Delete resident record
       await Resident.findByIdAndDelete(req.params.id);
 
+      console.log(
+        "Resident record deleted:",
+        resident.name
+      );
+
       res.json({
-        message: "Resident and login account deleted successfully",
+        message:
+          "Resident and login account deleted successfully",
       });
     } catch (error) {
       console.log("Delete resident error:", error);
@@ -151,3 +188,4 @@ router.delete(
 
 
 module.exports = router;
+
