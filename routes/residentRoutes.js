@@ -3,29 +3,52 @@ const bcrypt = require("bcryptjs");
 
 const Resident = require("../models/Resident");
 const User = require("../models/user");
+const Room = require("../models/Room");
 
 const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// get all resident
+// Helper: update room occupancy and status
+async function updateRoomOccupancy(roomNumber) {
+  if (!roomNumber) return;
+
+  const room = await Room.findOne({ roomNumber });
+  if (!room) return;
+
+  const occupied = await Resident.countDocuments({
+    roomNumber: room.roomNumber,
+  });
+
+  room.occupied = occupied;
+
+  // Preserve rooms marked for maintenance.
+  if (room.status !== "Maintenance") {
+    if (occupied === 0) {
+      room.status = "Available";
+    } else if (occupied >= room.capacity) {
+      room.status = "Full";
+    } else {
+      room.status = "Occupied";
+    }
+  }
+
+  await room.save();
+}
+
+// GET ALL RESIDENTS
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const residents = await Resident.find();
-
     res.json(residents);
   } catch (error) {
     console.log("Fetch residents error:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch residents",
-    });
+    res.status(500).json({ message: "Failed to fetch residents" });
   }
 });
 
-
-//create a resident
+// CREATE RESIDENT
 router.post(
   "/",
   authMiddleware,
@@ -39,9 +62,10 @@ router.post(
         emergencyContactPhone,
         email,
         roomNumber,
+        checkInDate,
+        expectedCheckOutDate,
       } = req.body;
 
-      // Check if login account already exists
       const existingUser = await User.findOne({ email });
 
       if (existingUser) {
@@ -50,29 +74,65 @@ router.post(
         });
       }
 
-      // Create resident
+      let room = null;
+
+      if (roomNumber) {
+        room = await Room.findOne({ roomNumber });
+
+        if (!room) {
+          return res.status(400).json({ message: "Room not found" });
+        }
+
+        if (room.status === "Maintenance") {
+          return res.status(400).json({
+            message: "Cannot allocate a room under maintenance",
+          });
+        }
+
+        const occupied = await Resident.countDocuments({ roomNumber });
+
+        if (occupied >= room.capacity) {
+          return res.status(400).json({ message: "Room is full" });
+        }
+      }
+
       const resident = await Resident.create({
         name,
         phone,
         emergencyContactName,
         emergencyContactPhone,
         email,
-        roomNumber,
+        roomNumber: roomNumber || "",
+        checkInDate: roomNumber ? (checkInDate || new Date()) : null,
+        expectedCheckOutDate: expectedCheckOutDate || null,
+        roomHistory: roomNumber
+          ? [
+              {
+                roomNumber,
+                checkInDate: checkInDate || new Date(),
+                checkOutDate: null,
+              },
+            ]
+          : [],
       });
 
-      // Create default password
-      const hashedPassword = await bcrypt.hash(
-        "Resident@123",
-        10
-      );
+      const hashedPassword = await bcrypt.hash("Resident@123", 10);
 
-      // Create resident login account
-      await User.create({
-        name,
-        email,
-        password: hashedPassword,
-        role: "resident",
-      });
+      try {
+        await User.create({
+          name,
+          email,
+          password: hashedPassword,
+          role: "resident",
+        });
+      } catch (error) {
+        await Resident.findByIdAndDelete(resident._id);
+        throw error;
+      }
+
+      if (roomNumber) {
+        await updateRoomOccupancy(roomNumber);
+      }
 
       res.status(201).json({
         message: "Resident and login account created successfully",
@@ -80,7 +140,6 @@ router.post(
       });
     } catch (error) {
       console.log("Resident creation error:", error);
-
       res.status(400).json({
         message: error.message || "Failed to create resident",
       });
@@ -88,32 +147,113 @@ router.post(
   }
 );
 
-
-// update 
+// UPDATE RESIDENT DETAILS OR ROOM ALLOCATION
 router.put(
   "/:id",
   authMiddleware,
   roleMiddleware("admin", "staff"),
   async (req, res) => {
     try {
-      const resident = await Resident.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        {
-          new: true,
-        }
-      );
+      const resident = await Resident.findById(req.params.id);
 
       if (!resident) {
-        return res.status(404).json({
-          message: "Resident not found",
+        return res.status(404).json({ message: "Resident not found" });
+      }
+
+      const {
+        name,
+        phone,
+        emergencyContactName,
+        emergencyContactPhone,
+        email,
+        roomNumber,
+        checkInDate,
+        expectedCheckOutDate,
+      } = req.body;
+
+      const previousRoomNumber = resident.roomNumber || "";
+      const changingRoom = roomNumber !== undefined &&
+        roomNumber !== previousRoomNumber;
+
+      if (changingRoom && roomNumber) {
+        const newRoom = await Room.findOne({ roomNumber });
+
+        if (!newRoom) {
+          return res.status(400).json({ message: "Room not found" });
+        }
+
+        if (newRoom.status === "Maintenance") {
+          return res.status(400).json({
+            message: "Cannot allocate a room under maintenance",
+          });
+        }
+
+        const occupied = await Resident.countDocuments({
+          roomNumber,
+          _id: { $ne: resident._id },
         });
+
+        if (occupied >= newRoom.capacity) {
+          return res.status(400).json({ message: "Room is full" });
+        }
+      }
+
+      if (name !== undefined) resident.name = name;
+      if (phone !== undefined) resident.phone = phone;
+      if (emergencyContactName !== undefined) {
+        resident.emergencyContactName = emergencyContactName;
+      }
+      if (emergencyContactPhone !== undefined) {
+        resident.emergencyContactPhone = emergencyContactPhone;
+      }
+      if (email !== undefined) resident.email = email;
+      if (expectedCheckOutDate !== undefined) {
+        resident.expectedCheckOutDate = expectedCheckOutDate || null;
+      }
+
+      if (changingRoom) {
+        // Close the previous room-history entry.
+        const activeHistory = [...resident.roomHistory]
+          .reverse()
+          .find(
+            (entry) =>
+              entry.roomNumber === previousRoomNumber &&
+              entry.checkOutDate === null
+          );
+
+        if (activeHistory) {
+          activeHistory.checkOutDate = new Date();
+        }
+
+        resident.roomNumber = roomNumber || "";
+
+        if (roomNumber) {
+          const newCheckInDate = checkInDate || new Date();
+
+          resident.checkInDate = newCheckInDate;
+          resident.roomHistory.push({
+            roomNumber,
+            checkInDate: newCheckInDate,
+            checkOutDate: null,
+          });
+        } else {
+          // Check-out: resident no longer occupies a room.
+          resident.checkInDate = null;
+        }
+      } else if (checkInDate !== undefined) {
+        resident.checkInDate = checkInDate || null;
+      }
+
+      await resident.save();
+
+      if (changingRoom) {
+        await updateRoomOccupancy(previousRoomNumber);
+        await updateRoomOccupancy(resident.roomNumber);
       }
 
       res.json(resident);
     } catch (error) {
       console.log("Update resident error:", error);
-
       res.status(400).json({
         message: error.message || "Failed to update resident",
       });
@@ -121,64 +261,41 @@ router.put(
   }
 );
 
-
-
-// delete resident (Admin only)
+// DELETE RESIDENT (ADMIN ONLY)
 router.delete(
   "/:id",
   authMiddleware,
   roleMiddleware("admin"),
   async (req, res) => {
     try {
-      // Find resident first
       const resident = await Resident.findById(req.params.id);
 
       if (!resident) {
-        return res.status(404).json({
-          message: "Resident not found",
-        });
+        return res.status(404).json({ message: "Resident not found" });
       }
 
-      console.log("Deleting resident:", resident.name);
-      console.log("Resident email:", resident.email);
+      const assignedRoom = resident.roomNumber || "";
 
-      // Find the resident's login account
       const user = await User.findOne({
         email: resident.email,
         role: "resident",
       });
 
-      console.log("Resident user found:", user);
-
-      // Delete resident login account
       if (user) {
         await User.findByIdAndDelete(user._id);
-
-        console.log(
-          "Resident login account deleted:",
-          user.email
-        );
-      } else {
-        console.log(
-          "No matching resident login account found"
-        );
       }
 
-      // Delete resident record
-      await Resident.findByIdAndDelete(req.params.id);
+      await Resident.findByIdAndDelete(resident._id);
 
-      console.log(
-        "Resident record deleted:",
-        resident.name
-      );
+      if (assignedRoom) {
+        await updateRoomOccupancy(assignedRoom);
+      }
 
       res.json({
-        message:
-          "Resident and login account deleted successfully",
+        message: "Resident and login account deleted successfully",
       });
     } catch (error) {
       console.log("Delete resident error:", error);
-
       res.status(400).json({
         message: error.message || "Failed to delete resident",
       });
@@ -186,6 +303,4 @@ router.delete(
   }
 );
 
-
 module.exports = router;
-

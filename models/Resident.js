@@ -1,4 +1,23 @@
 const mongoose = require("mongoose");
+
+const roomHistorySchema = new mongoose.Schema(
+  {
+    roomNumber: {
+      type: String,
+      required: true,
+    },
+    checkInDate: {
+      type: Date,
+      required: true,
+    },
+    checkOutDate: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const residentSchema = new mongoose.Schema(
   {
     name: {
@@ -12,13 +31,13 @@ const residentSchema = new mongoose.Schema(
     },
 
     emergencyContactName: {
-     type: String,
-     default: "",
+      type: String,
+      default: "",
     },
 
     emergencyContactPhone: {
-     type: String,
-     default: "",
+      type: String,
+      default: "",
     },
 
     email: {
@@ -30,6 +49,21 @@ const residentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    checkInDate: {
+      type: Date,
+      default: null,
+    },
+
+    expectedCheckOutDate: {
+      type: Date,
+      default: null,
+    },
+
+    roomHistory: {
+      type: [roomHistorySchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -37,4 +71,5 @@ const residentSchema = new mongoose.Schema(
 );
 
 const Resident = mongoose.model("Resident", residentSchema);
+
 module.exports = Resident;
