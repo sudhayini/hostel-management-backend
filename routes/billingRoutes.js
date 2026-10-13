@@ -9,13 +9,51 @@ const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// get all the bills
+// GET BILLS
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const bills = await Billing.find();
+    let bills;
+
+    // Admin and staff can view all bills.
+    if (
+      req.user.role === "admin" ||
+      req.user.role === "staff"
+    ) {
+      bills = await Billing.find();
+    }
+
+    // Residents can view only their own bills.
+    else if (req.user.role === "resident") {
+      const user = await User.findById(req.user.id);
+
+      if (!user) {
+        return res.status(401).json({
+          message: "User account not found",
+        });
+      }
+
+      const resident = await Resident.findOne({
+        email: user.email,
+      });
+
+      if (!resident) {
+        return res.json([]);
+      }
+
+      bills = await Billing.find({
+        residentName: resident.name,
+        roomNumber: resident.roomNumber,
+      });
+    } else {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
 
     res.json(bills);
   } catch (error) {
+    console.log("Fetch bills error:", error);
+
     res.status(500).json({
       message: "Failed to fetch bills",
     });
