@@ -37,14 +37,97 @@ async function updateRoomOccupancy(roomNumber) {
   await room.save();
 }
 
-// GET ALL RESIDENTS
+// GET RESIDENTS
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const residents = await Resident.find();
+    let residents;
+
+    if (req.user.role === "admin" || req.user.role === "staff") {
+      // Admin and staff can view all residents.
+      residents = await Resident.find();
+    } else if (req.user.role === "resident") {
+      // Residents can only view their own record.
+      const user = await User.findById(req.user.id);
+
+      if (!user) {
+        return res.status(401).json({
+          message: "User account not found",
+        });
+      }
+
+      residents = await Resident.find({
+        email: user.email,
+      });
+    } else {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
+
     res.json(residents);
   } catch (error) {
     console.log("Fetch residents error:", error);
-    res.status(500).json({ message: "Failed to fetch residents" });
+    res.status(500).json({
+      message: "Failed to fetch residents",
+    });
+  }
+});
+
+
+// GET ONE RESIDENT PROFILE
+router.get("/:id", authMiddleware, async (req, res) => {
+  try {
+    const resident = await Resident.findById(req.params.id);
+
+    if (!resident) {
+      return res.status(404).json({
+        message: "Resident not found",
+      });
+    }
+
+    // Admin and staff can view any resident profile.
+    if (req.user.role === "admin" || req.user.role === "staff") {
+      return res.json(resident);
+    }
+
+    // Residents can view only their own profile.
+    if (req.user.role === "resident") {
+      const user = await User.findById(req.user.id);
+
+      if (!user) {
+        return res.status(401).json({
+          message: "User account not found",
+        });
+      }
+
+      if (
+        user.email.toLowerCase() !==
+        resident.email.toLowerCase()
+      ) {
+        return res.status(403).json({
+          message: "You can only view your own profile",
+        });
+      }
+
+      return res.json(resident);
+    }
+
+    return res.status(403).json({
+      message: "Access denied",
+    });
+  } catch (error) {
+    console.log("Fetch resident profile error:", error);
+
+    // An invalid MongoDB ID should not cause a server error.
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        message: "Invalid resident ID",
+      });
+    }
+
+    res.status(500).json({
+      message: "Failed to fetch resident profile",
+    });
   }
 });
 
