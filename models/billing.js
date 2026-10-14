@@ -1,7 +1,13 @@
 const mongoose = require("mongoose");
 const billingSchema = new mongoose.Schema(
   {
-    residentName: {
+   residentId: {
+     type: mongoose.Schema.Types.ObjectId,
+     ref: "Resident",
+     required: true,
+   },
+
+   residentName: {
       type: String,
       required: true,
     },

@@ -41,9 +41,9 @@ router.get("/", authMiddleware, async (req, res) => {
       }
 
       bills = await Billing.find({
-        residentName: resident.name,
-        roomNumber: resident.roomNumber,
-      });
+      residentId: resident._id, 
+    });
+
     } else {
       return res.status(403).json({
         message: "Access denied",
@@ -61,15 +61,12 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // post bill
-router.post(
-  "/",
-  authMiddleware,
-  roleMiddleware("admin", "staff"),
-  async (req, res) => {
+
+ router.post( "/", authMiddleware, roleMiddleware("admin", "staff"),
+ async (req, res) => {
     try {
       const {
-        residentName,
-        roomNumber,
+        residentId,
         roomFee,
         utilityFee,
         additionalFee,
@@ -80,15 +77,32 @@ router.post(
         dueDate,
       } = req.body;
 
+      if (!residentId) {
+        return res.status(400).json({
+          message: "Please select a resident",
+        });
+      }
+
       if (!dueDate) {
         return res.status(400).json({
           message: "Due date is required",
         });
       }
 
+      // Find the selected resident by MongoDB ID
+      const resident = await Resident.findById(residentId);
+
+      if (!resident) {
+        return res.status(404).json({
+          message: "Resident not found",
+        });
+      }
+
+      // Create the bill using the selected resident's actual details
       const bill = await Billing.create({
-        residentName,
-        roomNumber,
+        residentId: resident._id,
+        residentName: resident.name,
+        roomNumber: resident.roomNumber,
         roomFee,
         utilityFee,
         additionalFee,
@@ -99,44 +113,38 @@ router.post(
         dueDate,
       });
 
-      // Find resident
-      const resident = await Resident.findOne({
-        name: residentName,
+      // Find the resident's user account for notifications
+      const user = await User.findOne({
+        email: resident.email,
+        role: "resident",
       });
 
-      if (resident) {
-        const user = await User.findOne({
-          email: resident.email,
-          role: "resident",
-        });
+      if (user) {
+        // Pending payment notification
+        if (paymentStatus === "Pending") {
+          await Notification.create({
+            userId: user._id,
+            message: `Your hostel fee payment of ₹${total} is pending. Due date: ${new Date(
+              dueDate
+            ).toLocaleDateString()}.`,
+            type: "General",
+          });
+        }
 
-        if (user) {
-
-          // Pending payment notification
-          if (paymentStatus === "Pending") {
-            await Notification.create({
-              userId: user._id,
-              message: `Your hostel fee payment of ₹${total} is pending. Due date: ${new Date(dueDate).toLocaleDateString()}.`,
-              type: "General",
-            });
-          }
-
-          // Overdue payment notification
-          if (
-            paymentStatus !== "Paid" &&
-            new Date(dueDate) < new Date()
-          ) {
-            await Notification.create({
-              userId: user._id,
-              message: `Your hostel fee payment of ₹${total} is overdue.`,
-              type: "Overdue",
-            });
-          }
+        // Overdue payment notification
+        if (
+          paymentStatus !== "Paid" &&
+          new Date(dueDate) < new Date()
+        ) {
+          await Notification.create({
+            userId: user._id,
+            message: `Your hostel fee payment of ₹${total} is overdue.`,
+            type: "Overdue",
+          });
         }
       }
 
       res.status(201).json(bill);
-
     } catch (error) {
       console.log("Billing error:", error);
 
@@ -155,8 +163,7 @@ router.put(
   async (req, res) => {
     try {
       const {
-        residentName,
-        roomNumber,
+        residentId,
         roomFee,
         utilityFee,
         additionalFee,
@@ -173,20 +180,39 @@ router.put(
         });
       }
 
+      // Find the selected resident
+      const resident = residentId
+        ? await Resident.findById(residentId)
+        : null;
+
+      if (residentId && !resident) {
+        return res.status(404).json({
+          message: "Resident not found",
+        });
+      }
+
+      const updateData = {
+        roomFee,
+        utilityFee,
+        additionalFee,
+        discount,
+        lateFee,
+        total,
+        paymentStatus,
+        dueDate,
+      };
+
+      // Update resident details only when a resident ID is provided.
+      // This allows older bills without residentId to remain editable.
+      if (resident) {
+        updateData.residentId = resident._id;
+        updateData.residentName = resident.name;
+        updateData.roomNumber = resident.roomNumber;
+      }
+
       const bill = await Billing.findByIdAndUpdate(
         req.params.id,
-        {
-          residentName,
-          roomNumber,
-          roomFee,
-          utilityFee,
-          additionalFee,
-          discount,
-          lateFee,
-          total,
-          paymentStatus,
-          dueDate,
-        },
+        updateData,
         {
           new: true,
           runValidators: true,
@@ -201,6 +227,8 @@ router.put(
 
       res.json(bill);
     } catch (error) {
+      console.log("Update bill error:", error);
+
       res.status(400).json({
         message: "Failed to update bill",
       });
