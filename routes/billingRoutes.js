@@ -124,13 +124,13 @@ router.get("/", authMiddleware, async (req, res) => {
 
       
        // Send email notification when the resident has an email address
-      if (resident.email) {
-    //  console.log("Attempting bill email to:", resident.email);
-     try {
-    await sendEmail({
-      to: resident.email,
-      subject: "New Hostel Fee Bill",
-      text: `Hello ${resident.name},
+
+// Send email without delaying bill creation
+if (resident.email) {
+  sendEmail({
+    to: resident.email,
+    subject: "New Hostel Fee Bill",
+    text: `Hello ${resident.name},
 
 A new hostel bill has been created for you.
 
@@ -143,12 +143,15 @@ Please log in to your Hostel Management System to view your bill.
 
 Thank you,
 Hostel Management Team`,
-    });
-  } catch (emailError) {
-    // Don't fail bill creation if email delivery fails
-   // console.error("Bill email failed:", emailError);
-  }
+  }).then(() => {
+    console.log("Bill email sent successfully");
+  }).catch((emailError) => {
+    console.error("Bill email failed:", emailError.message);
+  });
+} else {
+  console.log("Bill email skipped: resident has no email address");
 }
+
 
       if (user) {
         // Pending payment notification

@@ -1,7 +1,12 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_APP_PASSWORD,
@@ -21,5 +26,16 @@ const sendEmail = async ({ to, subject, text, html }) => {
     html,
   });
 };
+
+
+const testEmail = async (to) => {
+  return sendEmail({
+    to,
+    subject: "Hostel App Email Test",
+    text: "This is a test email from your Hostel Management System.",
+  });
+};
+
+
 
 module.exports = { sendEmail };

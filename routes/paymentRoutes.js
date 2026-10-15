@@ -73,8 +73,11 @@ router.get( "/", authMiddleware, async (req, res) => {
   }
 );
 
-// create a payments
-router.post("/", authMiddleware, roleMiddleware("admin", "staff"),
+// Create a payment
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("admin", "staff"),
   async (req, res) => {
     try {
       const {
@@ -116,42 +119,59 @@ router.post("/", authMiddleware, roleMiddleware("admin", "staff"),
         notes,
       });
 
-// Send payment confirmation email
-try {
-  const resident = await Resident.findById(bill.residentId);
+      // Respond immediately after saving the payment
+      res.status(201).json(payment);
 
-  if (resident?.email) {
-    await sendEmail({
-      to: resident.email,
-      subject: "Hostel Payment Confirmation",
-      text: `Hello ${bill.residentName},
+      // Send confirmation email in the background
+      Resident.findById(bill.residentId)
+        .then((resident) => {
+          if (!resident?.email) {
+            console.log(
+              "Payment email skipped: resident has no email"
+            );
+            return;
+          }
+
+          return sendEmail({
+            to: resident.email,
+            subject: "Hostel Payment Confirmation",
+            text: `Hello ${bill.residentName},
 
 We have recorded your hostel payment.
 
 Amount received: ₹${amount}
 Payment method: ${paymentMethod}
-Payment date: ${new Date(paymentDate || Date.now()).toLocaleDateString()}
+Payment date: ${new Date(
+              paymentDate || Date.now()
+            ).toLocaleDateString()}
 Bill ID: ${bill._id}
 
 Thank you,
 Hostel Management Team`,
-    });
-  }
-} catch (emailError) {
-  // Payment is saved even if the email fails
-  console.error("Payment confirmation email failed:", emailError.message);
-}
-
-      res.status(201).json(payment);
+          });
+        })
+        .then(() => {
+          console.log("Payment email processing finished");
+        })
+        .catch((emailError) => {
+          console.error(
+            "Payment confirmation email failed:",
+            emailError.message
+          );
+        });
     } catch (error) {
-      console.log("Payment error:", error);
+      console.error("Payment error:", error);
 
-      res.status(500).json({
-        message: "Failed to create payment",
-      });
+      if (!res.headersSent) {
+        res.status(500).json({
+          message: "Failed to create payment",
+        });
+      }
     }
   }
 );
+
+
 
 module.exports = router;
 
