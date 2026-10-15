@@ -27,15 +27,4 @@ const sendEmail = async ({ to, subject, text, html }) => {
   });
 };
 
-
-const testEmail = async (to) => {
-  return sendEmail({
-    to,
-    subject: "Hostel App Email Test",
-    text: "This is a test email from your Hostel Management System.",
-  });
-};
-
-
-
 module.exports = { sendEmail };
