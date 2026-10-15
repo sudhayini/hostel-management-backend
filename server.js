@@ -40,6 +40,8 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
+
+
 // connect mongodb
 mongoose
   .connect(process.env.MONGO_URI)

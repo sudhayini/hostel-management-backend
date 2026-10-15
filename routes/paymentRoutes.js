@@ -8,6 +8,7 @@ const User = require("../models/user");
 
 const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
+const { sendEmail } = require("../services/emailService");
 
 const router = express.Router();
 
@@ -114,6 +115,32 @@ router.post("/", authMiddleware, roleMiddleware("admin", "staff"),
         transactionId,
         notes,
       });
+
+// Send payment confirmation email
+try {
+  const resident = await Resident.findById(bill.residentId);
+
+  if (resident?.email) {
+    await sendEmail({
+      to: resident.email,
+      subject: "Hostel Payment Confirmation",
+      text: `Hello ${bill.residentName},
+
+We have recorded your hostel payment.
+
+Amount received: ₹${amount}
+Payment method: ${paymentMethod}
+Payment date: ${new Date(paymentDate || Date.now()).toLocaleDateString()}
+Bill ID: ${bill._id}
+
+Thank you,
+Hostel Management Team`,
+    });
+  }
+} catch (emailError) {
+  // Payment is saved even if the email fails
+  console.error("Payment confirmation email failed:", emailError.message);
+}
 
       res.status(201).json(payment);
     } catch (error) {

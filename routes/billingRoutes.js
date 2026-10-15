@@ -8,6 +8,7 @@ const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
 const router = express.Router();
+const { sendEmail } = require("../services/emailService");
 
 // GET BILLS
 router.get("/", authMiddleware, async (req, res) => {
@@ -76,6 +77,7 @@ router.get("/", authMiddleware, async (req, res) => {
         paymentStatus,
         dueDate,
       } = req.body;
+console.log("CREATE BILL ROUTE HIT");
 
       if (!residentId) {
         return res.status(400).json({
@@ -118,6 +120,35 @@ router.get("/", authMiddleware, async (req, res) => {
         email: resident.email,
         role: "resident",
       });
+         
+
+      
+       // Send email notification when the resident has an email address
+      if (resident.email) {
+        console.log("Attempting bill email to:", resident.email);
+     try {
+    await sendEmail({
+      to: resident.email,
+      subject: "New Hostel Fee Bill",
+      text: `Hello ${resident.name},
+
+A new hostel bill has been created for you.
+
+Room: ${resident.roomNumber}
+Total amount: ₹${total}
+Payment status: ${paymentStatus}
+Due date: ${new Date(dueDate).toLocaleDateString()}
+
+Please log in to your Hostel Management System to view your bill.
+
+Thank you,
+Hostel Management Team`,
+    });
+  } catch (emailError) {
+    // Don't fail bill creation if email delivery fails
+    console.error("Bill email failed:", emailError);
+  }
+}
 
       if (user) {
         // Pending payment notification
