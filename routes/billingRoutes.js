@@ -7,8 +7,9 @@ const Notification = require("../models/notification");
 const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
-const router = express.Router();
 const { sendEmail } = require("../services/emailService");
+
+const router = express.Router();
 
 // GET BILLS
 router.get("/", authMiddleware, async (req, res) => {
@@ -21,10 +22,8 @@ router.get("/", authMiddleware, async (req, res) => {
       req.user.role === "staff"
     ) {
       bills = await Billing.find();
-    }
-
-    // Residents can view only their own bills.
-    else if (req.user.role === "resident") {
+    } else if (req.user.role === "resident") {
+      // Residents can view only their own bills.
       const user = await User.findById(req.user.id);
 
       if (!user) {
@@ -42,29 +41,30 @@ router.get("/", authMiddleware, async (req, res) => {
       }
 
       bills = await Billing.find({
-      residentId: resident._id, 
-    });
-
+        residentId: resident._id,
+      });
     } else {
       return res.status(403).json({
         message: "Access denied",
       });
     }
 
-    res.json(bills);
+    return res.json(bills);
   } catch (error) {
-    console.log("Fetch bills error:", error);
+    console.error("Fetch bills error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Failed to fetch bills",
     });
   }
 });
 
-// post bill
-
- router.post( "/", authMiddleware, roleMiddleware("admin", "staff"),
- async (req, res) => {
+// CREATE BILL
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("admin", "staff"),
+  async (req, res) => {
     try {
       const {
         residentId,
@@ -77,7 +77,6 @@ router.get("/", authMiddleware, async (req, res) => {
         paymentStatus,
         dueDate,
       } = req.body;
-// console.log("CREATE BILL ROUTE HIT");
 
       if (!residentId) {
         return res.status(400).json({
@@ -91,7 +90,7 @@ router.get("/", authMiddleware, async (req, res) => {
         });
       }
 
-      // Find the selected resident by MongoDB ID
+      // Find the selected resident.
       const resident = await Resident.findById(residentId);
 
       if (!resident) {
@@ -100,7 +99,7 @@ router.get("/", authMiddleware, async (req, res) => {
         });
       }
 
-      // Create the bill using the selected resident's actual details
+      // Create the bill.
       const bill = await Billing.create({
         residentId: resident._id,
         residentName: resident.name,
@@ -115,46 +114,42 @@ router.get("/", authMiddleware, async (req, res) => {
         dueDate,
       });
 
-      // Find the resident's user account for notifications
+      // Find the resident's user account for notifications.
       const user = await User.findOne({
         email: resident.email,
         role: "resident",
       });
-         
 
-      
-       // Send email notification when the resident has an email address
-
-// Send email without delaying bill creation
+     
+// Send bill email to the resident.
 if (resident.email) {
-  sendEmail({
-    to: resident.email,
-    subject: "New Hostel Fee Bill",
-    text: `Hello ${resident.name},
+  try {
+    await sendEmail({
+      to: resident.email,
+      subject: "Hostel Management System - New Bill",
+      text: `Hello ${resident.name},
 
 A new hostel bill has been created for you.
 
-Room: ${resident.roomNumber}
-Total amount: ₹${total}
-Payment status: ${paymentStatus}
-Due date: ${new Date(dueDate).toLocaleDateString()}
+Room Number: ${resident.roomNumber}
+Total Amount: ₹${total}
+Payment Status: ${paymentStatus || "Pending"}
+Due Date: ${new Date(dueDate).toLocaleDateString()}
 
-Please log in to your Hostel Management System to view your bill.
+Please log in to the Hostel Management System to view your bill.
 
 Thank you,
-Hostel Management Team`,
-  }).then(() => {
-    console.log("Bill email sent successfully");
-  }).catch((emailError) => {
+Hostel Management System`,
+    });
+
+    console.log("Bill email accepted by Brevo");
+  } catch (emailError) {
     console.error("Bill email failed:", emailError.message);
-  });
-} else {
-  console.log("Bill email skipped: resident has no email address");
+  }
 }
 
-
       if (user) {
-        // Pending payment notification
+        // Notify the resident about a pending bill.
         if (paymentStatus === "Pending") {
           await Notification.create({
             userId: user._id,
@@ -165,7 +160,7 @@ Hostel Management Team`,
           });
         }
 
-        // Overdue payment notification
+        // Notify the resident if the bill is already overdue.
         if (
           paymentStatus !== "Paid" &&
           new Date(dueDate) < new Date()
@@ -178,18 +173,18 @@ Hostel Management Team`,
         }
       }
 
-      res.status(201).json(bill);
+      return res.status(201).json(bill);
     } catch (error) {
-      console.log("Billing error:", error);
+      console.error("Billing error:", error);
 
-      res.status(400).json({
+      return res.status(400).json({
         message: "Failed to create bill",
       });
     }
   }
 );
 
-// update bill
+// UPDATE BILL
 router.put(
   "/:id",
   authMiddleware,
@@ -214,7 +209,6 @@ router.put(
         });
       }
 
-      // Find the selected resident
       const resident = residentId
         ? await Resident.findById(residentId)
         : null;
@@ -236,8 +230,6 @@ router.put(
         dueDate,
       };
 
-      // Update resident details only when a resident ID is provided.
-      // This allows older bills without residentId to remain editable.
       if (resident) {
         updateData.residentId = resident._id;
         updateData.residentName = resident.name;
@@ -259,18 +251,18 @@ router.put(
         });
       }
 
-      res.json(bill);
+      return res.json(bill);
     } catch (error) {
-      console.log("Update bill error:", error);
+      console.error("Update bill error:", error);
 
-      res.status(400).json({
+      return res.status(400).json({
         message: "Failed to update bill",
       });
     }
   }
 );
 
-//delete bill
+// DELETE BILL
 router.delete(
   "/:id",
   authMiddleware,
@@ -287,11 +279,13 @@ router.delete(
         });
       }
 
-      res.json({
+      return res.json({
         message: "Bill deleted successfully",
       });
     } catch (error) {
-      res.status(400).json({
+      console.error("Delete bill error:", error);
+
+      return res.status(400).json({
         message: "Failed to delete bill",
       });
     }
@@ -299,4 +293,3 @@ router.delete(
 );
 
 module.exports = router;
-

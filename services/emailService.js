@@ -1,30 +1,46 @@
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 20000,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_APP_PASSWORD,
-  },
-});
-
 const sendEmail = async ({ to, subject, text, html }) => {
   if (!to) {
     throw new Error("Recipient email is required");
   }
 
-  return transporter.sendMail({
-    from: `"Hostel Management System" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    text,
-    html,
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error("BREVO_API_KEY is missing");
+  }
+
+  const senderEmail = process.env.BREVO_SENDER_EMAIL;
+
+  if (!senderEmail) {
+    throw new Error("BREVO_SENDER_EMAIL is missing");
+  }
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "api-key": process.env.BREVO_API_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: {
+        name: "Hostel Management System",
+        email: senderEmail,
+      },
+      to: [{ email: to }],
+      subject,
+      ...(html ? { htmlContent: html } : {}),
+      ...(text ? { textContent: text } : {}),
+    }),
   });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      result.message || `Brevo email failed with status ${response.status}`
+    );
+  }
+
+  return result;
 };
 
 module.exports = { sendEmail };
