@@ -1,43 +1,38 @@
 # Hostel Management System — Backend
 
-A full-stack Hostel Management System backend built using Node.js, Express, MongoDB, and Mongoose.
+A full-stack Hostel Management System backend built using Node.js, Express.js, MongoDB Atlas, and Mongoose.
 
-The backend provides secure REST APIs for authentication, residents, rooms, maintenance, billing, payments, notifications, and staff management.
+The backend provides REST APIs for authentication, resident management, room management, maintenance requests, billing, payments, notifications, and staff management.
 
 ## Live Backend
 
-**Render:**
 https://hostelmanagementsystemapp.onrender.com/
 
-## 💻 Source Code
+## Source Code
 
-**GitHub:**
 https://github.com/sudhayini/hostel-management-backend
 
----
+## Technologies Used
 
-##  Technologies Used
+- Node.js
+- Express.js
+- MongoDB
+- MongoDB Atlas
+- Mongoose
+- JWT Authentication
+- bcryptjs
+- CORS
+- dotenv
+- Nodemailer
+- Nodemon
 
-* Node.js
-* Express.js
-* MongoDB
-* MongoDB Atlas
-* Mongoose
-* JWT Authentication
-* bcryptjs
-* CORS
-* dotenv
-* Nodemon
+## Project Structure
 
----
-
-##  Project Structure
-
+```text
 backend/
 ├── middleware/
 │   ├── authmiddleware.js
 │   └── roleMiddleware.js
-│
 ├── models/
 │   ├── billing.js
 │   ├── maintenance.js
@@ -46,7 +41,6 @@ backend/
 │   ├── user.js
 │   ├── notification.js
 │   └── payment.js
-│
 ├── routes/
 │   ├── authRoutes.js
 │   ├── billingRoutes.js
@@ -55,7 +49,8 @@ backend/
 │   ├── roomRoutes.js
 │   ├── notificationRoutes.js
 │   └── paymentRoutes.js
-│
+├── services/
+│   └── emailService.js
 ├── .env
 ├── .gitignore
 ├── package.json
@@ -63,126 +58,108 @@ backend/
 └── server.js
 ```
 
----
+## Features
 
-##  Features
+### Authentication and Authorization
 
-###  Authentication
+- User registration and login
+- JWT-based authentication
+- Password hashing using bcrypt
+- Role-based access control
+- Protected API routes
 
-* User registration and login
-* JWT authentication
-* Password hashing using bcrypt
-* Role-based access control
+### Resident Management
 
-###  Resident Management
+- Add, view, and update resident information
+- Check out residents
+- Delete residents according to permissions
+- Manage emergency contact information
+- Create resident login accounts
+- Store check-in and expected check-out dates
+- Maintain room allocation history
+- Retrieve individual resident profiles
 
-* Add residents
-* View residents
-* Edit resident details
-* Check-out residents
-* Delete residents
-* Emergency contact information
-* Automatic resident login account creation
+### Room Management
 
-###  Room Management
+- Create, view, update, and delete rooms
+- Manage room allocation
+- Track room occupancy
+- View room availability
+- Retrieve room information from MongoDB
 
-* Add rooms
-* View rooms
-* Edit rooms
-* Delete rooms
-* Room allocation
-* Occupancy management
-* Room availability
+### Maintenance Management
 
-###  Maintenance
+- Create maintenance requests
+- Set request priority
+- Track maintenance status
+- Assign requests to staff, where implemented
+- Generate maintenance-related notifications
 
-* Create maintenance requests
-* Set priority
-* Track maintenance status
-* Assign maintenance requests to staff
-* Staff assignment notifications
+### Billing Management
 
-###  Billing
+- Create and retrieve resident bills
+- Track pending and partially paid bills
+- Track overdue payments
+- Manage billing due dates
+- Generate billing notifications
 
-* Create resident bills
-* Track pending payments
-* Track overdue payments
-* Due dates
-* Billing notifications
+### Payment Management
 
-###  Payments
+- Record payment information
+- Store supported payment methods, such as cash, UPI, card, and bank transfer
+- Track transaction IDs
+- Maintain payment history
+- Track payment status
 
-* Record payments
-* Payment methods:
+**Note:** An online payment gateway has not yet been integrated. Recording payment information is different from processing a real online payment.
 
-  * Cash
-  * UPI
-  * Card
-  * Bank Transfer
-* Transaction ID
-* Payment history
+### Notifications
 
-###  Notifications
+- Create and retrieve notifications
+- Maintenance assignment notifications
+- Pending payment notifications
+- Overdue payment notifications
+- Read and unread notification status
 
-* General notifications
-* Maintenance assignment notifications
-* Pending payment notifications
-* Overdue notifications
-* Read/unread notification status
+### Staff Management
 
-###  Staff Management
+- Manage staff records according to permissions
+- Manage staff roles and access permissions
 
-* Add staff
-* View staff
-* Edit staff
-* Delete staff
-* Staff role management
+### Email Service
 
----
+- Email functionality through a dedicated email service
+- SMTP configuration using environment variables
 
-##  User Roles
+## User Roles
 
 | Feature          | Admin | Staff | Resident |
-| ---------------- | ----- | ----- | -------- |
-| Dashboard        | yes   | yes   | yes      |
-| View Residents   | yes   | yes   | no       |
-| Add Resident     | yes   | yes   | no       |
-| Edit Resident    | yes   | yes   | no       |
-| Delete Resident  | yes   | no    | no       |
-| Manage Rooms     | yes   | no    | no       |
-| Maintenance      | yes   | yes   | yes      |
-| Billing          | yes   | yes   | no       |
-| Payments         | yes   | yes   | no       |
-| Staff Management | yes   | no    | no       |
-| Reports          | yes   | no    | no       |
+|------------------|-------|-------|----------|
+| Dashboard        |  Yes  |  Yes  |   Yes    |
+| View Residents   |  Yes  |  Yes  |   No     |
+| Add Resident     |  Yes  |  Yes  |   No     |
+| Edit Resident    |  Yes  |  Yes  |   No     |
+| Delete Resident  |  Yes  |  No   |   No     |
+| Manage Rooms     |  Yes  |  No   |   No     |
+| Maintenance      |  Yes  |  Yes  |   Yes    |
+| Billing          |  Yes  |  Yes  |   No     |
+| Payments         |  Yes  |  Yes  |   No     |
+| Staff Management |  Yes  |  No   |   No     |
+| Reports          |  Yes  |  No   |   No     |
 
----
 
-##  Default Resident Password
-
-When a resident account is created, the default password is:
-
-```text
-Resident@123(same for all- email only change)
-```
-
-For production use, this should ideally be replaced with a password-reset flow.
-
----
-
-##  Installation
+## Installation
 
 Clone the repository:
 
 ```bash
 git clone https://github.com/sudhayini/hostel-management-backend.git
-
 ```
 
-Enter the backend folder:
+Navigate to the repository:
 
 ```bash
-cd hostel-management-backend
+cd backend
 ```
 
 Install dependencies:
@@ -191,89 +168,87 @@ Install dependencies:
 npm install
 ```
 
----
+## Environment Variables
 
-##  Environment Variables
-
-Create a `.env` file:
+Create a `.env` file in the backend root directory:
 
 ```env
+PORT=5000
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
-PORT=5000
+EMAIL_USER=your_email_address
+EMAIL_APP_PASSWORD=your_email_app_password
 ```
 
-##  Run Locally
+**Security:** Never commit real passwords, database connection strings, JWT secrets, email app passwords, or other API secrets to GitHub. Keep `.env` in `.gitignore`.
 
-Development mode:
+## Run Locally
+
+Start the development server:
 
 ```bash
 npm run dev
 ```
 
-Production mode:
+For production mode, if configured in `package.json`:
 
 ```bash
 npm start
 ```
 
-The backend runs on:
+The local backend normally runs at:
 
-```text
 http://localhost:5000
-```
 
----
+## API Base URL
 
-##  API Base URL
+Production backend:
 
-Production:
+https://hostelmanagementsystemapp.onrender.com/
 
-```text
-https://hostelmanagementsystemapp.onrender.com/api
-```
+## Main API Routes
 
----
+ Authentication -    `/api/auth` 
+ Residents -        `/api/residents` 
+ Rooms  -          `/api/rooms` 
+ Maintenance  -   `/api/maintenance` 
+ Billing  -       `/api/billing` 
+ Payments -       `/api/payments` 
+ Notifications  - `/api/notifications` 
 
-##  Main API Routes
-
-```text
-/api/auth
-/api/residents
-/api/rooms
-/api/maintenance
-/api/billing
-/api/payments
-/api/notifications
-```
-
----
+The available endpoints and HTTP methods depend on the implemented routes.
 
 ## Security
 
-The backend uses:
+The backend uses or is configured for:
 
-* JWT authentication
-* Password hashing
-* Role-based authorization
-* Protected API routes
-* Environment variables for sensitive credentials
-* CORS configuration
+- JWT authentication
+- Password hashing
+- Role-based authorization
+- Protected API routes
+- Environment variables for sensitive configuration
+- CORS configuration
 
----
+## Database Backup
 
-##  Deployment
+A manual MongoDB Atlas database backup was created using MongoDB Database Tools (`mongodump`).
 
-The backend is deployed using **Render**.
+This backup is a separate manual procedure. It is not an automatic backup feature of the application.
 
-MongoDB database is hosted using **MongoDB Atlas**.
+## Deployment
 
----
+- **Backend:** Render
+- **Database:** MongoDB Atlas
+- **Frontend:** Netlify
 
-##  Author
+Configure production environment variables in the Render dashboard.
 
-**Sudhayini**
+## Related Repository
+
+[Hostel Management System Frontend](https://github.com/sudhayini/hostel-management-frontend)
+
+## Author
+
+**Salai Sudhayini**
 
 Hostel Management System — Full Stack Project
-
-````
