@@ -1,29 +1,115 @@
 const express = require("express");
 const Billing = require("../models/billing");
+const Payment = require("../models/payment");
 const Resident = require("../models/Resident");
 const User = require("../models/user");
 const Notification = require("../models/notification");
 
 const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
-
 const { sendEmail } = require("../services/emailService");
 
 const router = express.Router();
+
+const LATE_FEE_PER_MONTH = 100;
+
+// Calculate the base bill total without a late fee.
+const calculateBaseTotal = (bill) => {
+  return Math.max(
+    0,
+    Number(bill.roomFee || 0) +
+      Number(bill.utilityFee || 0) +
+      Number(bill.additionalFee || 0) -
+      Number(bill.discount || 0)
+  );
+};
+
+// Include successful payments and older records without a status field.
+const getTotalPaid = async (billId) => {
+  const payments = await Payment.find({
+    billId,
+    $or: [
+      { status: "Success" },
+      { status: { $exists: false } },
+    ],
+  });
+
+  return payments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0
+  );
+};
+
+// Calculate ₹100 per overdue month while the base bill has a balance.
+const calculateLateFee = (bill, totalPaid) => {
+  const dueDate = new Date(bill.dueDate);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return 0;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueDate.setHours(0, 0, 0, 0);
+
+  const baseTotal = calculateBaseTotal(bill);
+
+  if (
+    today <= dueDate ||
+    baseTotal <= 0 ||
+    totalPaid >= baseTotal
+  ) {
+    return 0;
+  }
+
+  let months =
+    (today.getFullYear() - dueDate.getFullYear()) * 12 +
+    (today.getMonth() - dueDate.getMonth());
+
+  if (today.getDate() < dueDate.getDate()) {
+    months -= 1;
+  }
+
+  // Charge the first ₹100 after the bill becomes overdue.
+  months = Math.max(1, months);
+
+  return months * LATE_FEE_PER_MONTH;
+};
+
+// Build a bill response using current payments and late fees.
+const buildBillResponse = async (bill) => {
+  const totalPaid = await getTotalPaid(bill._id);
+  const baseTotal = calculateBaseTotal(bill);
+  const lateFee = calculateLateFee(bill, totalPaid);
+  const total = baseTotal + lateFee;
+
+  let paymentStatus = "Pending";
+
+  if (totalPaid >= total) {
+    paymentStatus = "Paid";
+  } else if (totalPaid > 0) {
+    paymentStatus = "Partially Paid";
+  }
+
+  return {
+    ...bill.toObject(),
+    lateFee,
+    total,
+    paymentStatus,
+  };
+};
 
 // GET BILLS
 router.get("/", authMiddleware, async (req, res) => {
   try {
     let bills;
 
-    // Admin and staff can view all bills.
     if (
       req.user.role === "admin" ||
       req.user.role === "staff"
     ) {
       bills = await Billing.find();
     } else if (req.user.role === "resident") {
-      // Residents can view only their own bills.
       const user = await User.findById(req.user.id);
 
       if (!user) {
@@ -49,7 +135,11 @@ router.get("/", authMiddleware, async (req, res) => {
       });
     }
 
-    return res.json(bills);
+    const billsWithLateFees = await Promise.all(
+      bills.map(buildBillResponse)
+    );
+
+    return res.json(billsWithLateFees);
   } catch (error) {
     console.error("Fetch bills error:", error);
 
@@ -72,9 +162,6 @@ router.post(
         utilityFee,
         additionalFee,
         discount,
-        lateFee,
-        total,
-        paymentStatus,
         dueDate,
       } = req.body;
 
@@ -84,13 +171,40 @@ router.post(
         });
       }
 
-      if (!dueDate) {
+      if (!dueDate || Number.isNaN(new Date(dueDate).getTime())) {
         return res.status(400).json({
-          message: "Due date is required",
+          message: "A valid due date is required",
         });
       }
 
-      // Find the selected resident.
+      const amounts = {
+        roomFee: Number(roomFee ?? 0),
+        utilityFee: Number(utilityFee ?? 0),
+        additionalFee: Number(additionalFee ?? 0),
+        discount: Number(discount ?? 0),
+      };
+
+      if (
+        Object.values(amounts).some(
+          (amount) => !Number.isFinite(amount) || amount < 0
+        )
+      ) {
+        return res.status(400).json({
+          message: "Bill amounts must be valid non-negative numbers",
+        });
+      }
+
+      const subtotal =
+        amounts.roomFee +
+        amounts.utilityFee +
+        amounts.additionalFee;
+
+      if (amounts.discount > subtotal) {
+        return res.status(400).json({
+          message: "Discount cannot exceed the fees",
+        });
+      }
+
       const resident = await Resident.findById(residentId);
 
       if (!resident) {
@@ -99,83 +213,68 @@ router.post(
         });
       }
 
-      // Create the bill.
+      const baseTotal = subtotal - amounts.discount;
+
       const bill = await Billing.create({
         residentId: resident._id,
         residentName: resident.name,
         roomNumber: resident.roomNumber,
-        roomFee,
-        utilityFee,
-        additionalFee,
-        discount,
-        lateFee,
-        total,
-        paymentStatus,
+        ...amounts,
+        lateFee: 0,
+        total: baseTotal,
+        paymentStatus: "Pending",
         dueDate,
       });
 
-      // Find the resident's user account for notifications.
       const user = await User.findOne({
         email: resident.email,
         role: "resident",
       });
 
-     
-// Send bill email to the resident.
-if (resident.email) {
-  try {
-    await sendEmail({
-      to: resident.email,
-      subject: "Hostel Management System - New Bill",
-      text: `Hello ${resident.name},
+      if (resident.email) {
+        try {
+          await sendEmail({
+            to: resident.email,
+            subject: "Hostel Management System - New Bill",
+            text: `Hello ${resident.name},
 
 A new hostel bill has been created for you.
 
 Room Number: ${resident.roomNumber}
-Total Amount: ₹${total}
-Payment Status: ${paymentStatus || "Pending"}
-Due Date: ${new Date(dueDate).toLocaleDateString()}
+Base Amount: ₹${baseTotal.toFixed(2)}
+Payment Status: Pending
+Due Date: ${new Date(dueDate).toLocaleDateString("en-IN")}
 
 Please log in to the Hostel Management System to view your bill.
 
 Thank you,
 Hostel Management System`,
-    });
-
-    console.log("Bill email accepted by Brevo");
-  } catch (emailError) {
-    console.error("Bill email failed:", emailError.message);
-  }
-}
-
-      if (user) {
-        // Notify the resident about a pending bill.
-        if (paymentStatus === "Pending") {
-          await Notification.create({
-            userId: user._id,
-            message: `Your hostel fee payment of ₹${total} is pending. Due date: ${new Date(
-              dueDate
-            ).toLocaleDateString()}.`,
-            type: "General",
           });
-        }
-
-        // Notify the resident if the bill is already overdue.
-        if (
-          paymentStatus !== "Paid" &&
-          new Date(dueDate) < new Date()
-        ) {
-          await Notification.create({
-            userId: user._id,
-            message: `Your hostel fee payment of ₹${total} is overdue.`,
-            type: "Overdue",
-          });
+        } catch (emailError) {
+          console.error(
+            "Bill email failed:",
+            emailError.message
+          );
         }
       }
 
-      return res.status(201).json(bill);
+      if (user) {
+        await Notification.create({
+          userId: user._id,
+          message: `Your hostel bill of ₹${baseTotal.toFixed(
+            2
+          )} has been created. Due date: ${new Date(
+            dueDate
+          ).toLocaleDateString("en-IN")}.`,
+          type: "General",
+        });
+      }
+
+      const responseBill = await buildBillResponse(bill);
+
+      return res.status(201).json(responseBill);
     } catch (error) {
-      console.error("Billing error:", error);
+      console.error("Create bill error:", error);
 
       return res.status(400).json({
         message: "Failed to create bill",
@@ -197,53 +296,44 @@ router.put(
         utilityFee,
         additionalFee,
         discount,
-        lateFee,
-        total,
-        paymentStatus,
         dueDate,
       } = req.body;
 
-      if (!dueDate) {
+      if (!dueDate || Number.isNaN(new Date(dueDate).getTime())) {
         return res.status(400).json({
-          message: "Due date is required",
+          message: "A valid due date is required",
         });
       }
 
-      const resident = residentId
-        ? await Resident.findById(residentId)
-        : null;
-
-      if (residentId && !resident) {
-        return res.status(404).json({
-          message: "Resident not found",
-        });
-      }
-
-      const updateData = {
-        roomFee,
-        utilityFee,
-        additionalFee,
-        discount,
-        lateFee,
-        total,
-        paymentStatus,
-        dueDate,
+      const amounts = {
+        roomFee: Number(roomFee ?? 0),
+        utilityFee: Number(utilityFee ?? 0),
+        additionalFee: Number(additionalFee ?? 0),
+        discount: Number(discount ?? 0),
       };
 
-      if (resident) {
-        updateData.residentId = resident._id;
-        updateData.residentName = resident.name;
-        updateData.roomNumber = resident.roomNumber;
+      if (
+        Object.values(amounts).some(
+          (amount) => !Number.isFinite(amount) || amount < 0
+        )
+      ) {
+        return res.status(400).json({
+          message: "Bill amounts must be valid non-negative numbers",
+        });
       }
 
-      const bill = await Billing.findByIdAndUpdate(
-        req.params.id,
-        updateData,
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+      const subtotal =
+        amounts.roomFee +
+        amounts.utilityFee +
+        amounts.additionalFee;
+
+      if (amounts.discount > subtotal) {
+        return res.status(400).json({
+          message: "Discount cannot exceed the fees",
+        });
+      }
+
+      const bill = await Billing.findById(req.params.id);
 
       if (!bill) {
         return res.status(404).json({
@@ -251,7 +341,47 @@ router.put(
         });
       }
 
-      return res.json(bill);
+      let resident = null;
+
+      if (residentId) {
+        resident = await Resident.findById(residentId);
+
+        if (!resident) {
+          return res.status(404).json({
+            message: "Resident not found",
+          });
+        }
+
+        bill.residentId = resident._id;
+        bill.residentName = resident.name;
+        bill.roomNumber = resident.roomNumber;
+      }
+
+      bill.roomFee = amounts.roomFee;
+      bill.utilityFee = amounts.utilityFee;
+      bill.additionalFee = amounts.additionalFee;
+      bill.discount = amounts.discount;
+      bill.dueDate = new Date(dueDate);
+
+      // Recalculate using existing successful payments.
+      const totalPaid = await getTotalPaid(bill._id);
+      const baseTotal = calculateBaseTotal(bill);
+      const lateFee = calculateLateFee(bill, totalPaid);
+
+      bill.lateFee = lateFee;
+      bill.total = baseTotal + lateFee;
+
+      if (totalPaid >= bill.total) {
+        bill.paymentStatus = "Paid";
+      } else if (totalPaid > 0) {
+        bill.paymentStatus = "Partially Paid";
+      } else {
+        bill.paymentStatus = "Pending";
+      }
+
+      await bill.save();
+
+      return res.json(await buildBillResponse(bill));
     } catch (error) {
       console.error("Update bill error:", error);
 
@@ -269,9 +399,7 @@ router.delete(
   roleMiddleware("admin"),
   async (req, res) => {
     try {
-      const bill = await Billing.findByIdAndDelete(
-        req.params.id
-      );
+      const bill = await Billing.findByIdAndDelete(req.params.id);
 
       if (!bill) {
         return res.status(404).json({
