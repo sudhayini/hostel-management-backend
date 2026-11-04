@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 
 const Resident = require("../models/Resident");
 const User = require("../models/user");
+const { sendSMS } = require("../services/smsService");
 const Room = require("../models/Room");
 
 const authMiddleware = require("../middleware/authmiddleware");
@@ -132,6 +133,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 // CREATE RESIDENT
+
+
 router.post(
   "/",
   authMiddleware,
@@ -141,26 +144,30 @@ router.post(
       const {
         name,
         phone,
-        emergencyContactName,
-        emergencyContactPhone,
         email,
         roomNumber,
+        emergencyContactName,
+        emergencyContactPhone,
         checkInDate,
         expectedCheckOutDate,
+        preferredRoomNumber,
+        preferredRoomType,
       } = req.body;
 
-      const existingUser = await User.findOne({ email });
-
-      if (existingUser) {
+      if (!name || !phone || !email) {
         return res.status(400).json({
-          message: "A user account with this email already exists",
+          message: "Name, phone and email are required",
         });
       }
 
-      let room = null;
+      if (!/^\d{10}$/.test(phone)) {
+        return res.status(400).json({
+          message: "Phone must be exactly 10 digits",
+        });
+      }
 
       if (roomNumber) {
-        room = await Room.findOne({ roomNumber });
+        const room = await Room.findOne({ roomNumber });
 
         if (!room) {
           return res.status(400).json({ message: "Room not found" });
@@ -179,57 +186,43 @@ router.post(
         }
       }
 
-      const resident = await Resident.create({
-        name,
-        phone,
-        emergencyContactName,
-        emergencyContactPhone,
-        email,
-        roomNumber: roomNumber || "",
-        checkInDate: roomNumber ? (checkInDate || new Date()) : null,
-        expectedCheckOutDate: expectedCheckOutDate || null,
-        roomHistory: roomNumber
-          ? [
-              {
-                roomNumber,
-                checkInDate: checkInDate || new Date(),
-                checkOutDate: null,
-              },
-            ]
-          : [],
+      const existingResident = await Resident.findOne({
+        email: email.trim().toLowerCase(),
       });
 
-      const hashedPassword = await bcrypt.hash("Resident@123", 10);
-
-      try {
-        await User.create({
-          name,
-          email,
-          password: hashedPassword,
-          role: "resident",
+      if (existingResident) {
+        return res.status(400).json({
+          message: "A resident with this email already exists",
         });
-      } catch (error) {
-        await Resident.findByIdAndDelete(resident._id);
-        throw error;
       }
+
+      const resident = await Resident.create({
+        name: name.trim(),
+        phone,
+        email: email.trim(),
+        roomNumber: roomNumber || "",
+        emergencyContactName: emergencyContactName || "",
+        emergencyContactPhone: emergencyContactPhone || "",
+        checkInDate: checkInDate || null,
+        expectedCheckOutDate: expectedCheckOutDate || null,
+        preferredRoomNumber: preferredRoomNumber || "",
+        preferredRoomType: preferredRoomType || "Any",
+      });
 
       if (roomNumber) {
         await updateRoomOccupancy(roomNumber);
       }
 
-      res.status(201).json({
-        message: "Resident and login account created successfully",
-        resident,
-      });
+      return res.status(201).json({ resident });
     } catch (error) {
-      console.log("Resident creation error:", error);
-      res.status(400).json({
+      console.error("Create resident error:", error);
+
+      return res.status(400).json({
         message: error.message || "Failed to create resident",
       });
     }
   }
 );
-
 // UPDATE RESIDENT DETAILS OR ROOM ALLOCATION
 router.put(
   "/:id",
@@ -252,6 +245,8 @@ router.put(
         roomNumber,
         checkInDate,
         expectedCheckOutDate,
+        preferredRoomNumber,
+        preferredRoomType,
       } = req.body;
 
       const previousRoomNumber = resident.roomNumber || "";
@@ -290,6 +285,13 @@ router.put(
         resident.emergencyContactPhone = emergencyContactPhone;
       }
       if (email !== undefined) resident.email = email;
+      if (preferredRoomNumber !== undefined) {
+         resident.preferredRoomNumber = preferredRoomNumber;
+      }
+
+      if (preferredRoomType !== undefined) {
+         resident.preferredRoomType = preferredRoomType;
+      }
       if (expectedCheckOutDate !== undefined) {
         resident.expectedCheckOutDate = expectedCheckOutDate || null;
       }

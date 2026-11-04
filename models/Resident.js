@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const roomHistorySchema = new mongoose.Schema(
@@ -48,6 +49,20 @@ const residentSchema = new mongoose.Schema(
     roomNumber: {
       type: String,
       default: "",
+    },
+
+    // Resident's preferred room
+    preferredRoomNumber: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // Resident's preferred room type
+    preferredRoomType: {
+      type: String,
+      enum: ["Single", "Shared", "Any"],
+      default: "Any",
     },
 
     checkInDate: {

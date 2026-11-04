@@ -11,6 +11,7 @@ const { sendEmail } = require("../services/emailService");
 
 const router = express.Router();
 
+
 const LATE_FEE_PER_MONTH = 100;
 
 // Calculate the base bill total without a late fee.
