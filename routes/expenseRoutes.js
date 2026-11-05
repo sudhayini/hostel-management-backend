@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const Expense = require("../models/Expense");
-const authMiddleware = require("../middleware/authMiddleware");
+const authMiddleware = require("../middleware/authmiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
 
 // All expense routes require login
