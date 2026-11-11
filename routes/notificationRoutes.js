@@ -4,7 +4,6 @@ const Notification = require("../models/notification");
 const authMiddleware = require("../middleware/authmiddleware");
 const { sendSMS } = require("../services/smsService");
 const Resident = require("../models/Resident");
-const User = require("../models/user");
 
 const router = express.Router();
 
@@ -69,13 +68,13 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// Send a notification to one resident or all residents.
+// Send SMS to one resident or all residents.
 // Only admin and staff may use this endpoint.
 router.post("/send-sms", authMiddleware, async (req, res) => {
   try {
     if (!["admin", "staff"].includes(req.user.role)) {
       return res.status(403).json({
-        message: "Only admin or staff can send notifications",
+        message: "Only admin or staff can send SMS",
       });
     }
 
@@ -88,7 +87,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
 
     if (typeof message !== "string" || !message.trim()) {
       return res.status(400).json({
-        message: "Notification message is required",
+        message: "SMS message is required",
       });
     }
 
@@ -126,78 +125,47 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
 
     for (const resident of residents) {
       try {
-        if (!resident.email) {
+        if (!resident.phone) {
           results.push({
             resident: resident.name,
             inAppSaved: false,
             smsSubmitted: false,
-            error: "Resident email is missing",
+            smsStatus: null,
+            smsSid: null,
+            smsError: "Resident phone number is missing",
           });
+
           continue;
         }
-
-        const residentUser = await User.findOne({
-          email: resident.email,
-          role: "resident",
-        });
-
-        if (!residentUser) {
-          results.push({
-            resident: resident.name,
-            inAppSaved: false,
-            smsSubmitted: false,
-            error: "Resident login account not found",
-          });
-          continue;
-        }
-
-        // Save the resident's in-app notification first.
-        await Notification.create({
-          userId: residentUser._id,
-          message: message.trim(),
-          type,
-        });
-
-        // Save a copy for the admin/staff sender.
-        await Notification.create({
-          userId: req.user.id,
-          message: `Notification sent to ${resident.name}: ${message.trim()}`,
-          type,
-        });
 
         let smsSubmitted = false;
         let smsStatus = null;
         let smsSid = null;
         let smsError = null;
 
-        // SMS may fail on a Twilio trial account if the
-        // recipient is not verified. The in-app notification remains saved.
-        if (resident.phone) {
-          try {
-            const smsResult = await sendSMS(
-              resident.phone,
-              message.trim()
-            );
+        try {
+          const smsResult = await sendSMS(
+            resident.phone,
+            message.trim()
+          );
 
-            smsSubmitted = true;
-            smsStatus = smsResult.status;
-            smsSid = smsResult.sid;
-          } catch (error) {
-            smsError = error.message;
-            console.error(
-              `SMS failed for resident ${resident.name}:`,
-              error.message,
-              "Twilio code:",
-              error.code
-            );
-          }
-        } else {
-          smsError = "Resident phone number is missing";
+          smsSubmitted = true;
+          smsStatus = smsResult.status;
+          smsSid = smsResult.sid;
+        } catch (error) {
+          smsError = error.message;
+
+          console.error(
+            `SMS failed for resident ${resident.name}:`,
+            error.message,
+            "Twilio code:",
+            error.code
+          );
         }
 
         results.push({
           resident: resident.name,
-          inAppSaved: true,
+          inAppSaved: false,
           smsSubmitted,
           smsStatus,
           smsSid,
@@ -205,7 +173,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         });
       } catch (residentError) {
         console.error(
-          `Notification failed for ${resident.name}:`,
+          `SMS processing failed for ${resident.name}:`,
           residentError.message
         );
 
@@ -213,38 +181,36 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           resident: resident.name,
           inAppSaved: false,
           smsSubmitted: false,
-          error: "Failed to process this resident's notification",
+          smsStatus: null,
+          smsSid: null,
+          smsError: residentError.message,
         });
       }
     }
-
-    const inAppSaved = results.filter(
-      (item) => item.inAppSaved
-    ).length;
 
     const smsSubmitted = results.filter(
       (item) => item.smsSubmitted
     ).length;
 
     const smsFailed = results.filter(
-      (item) => item.inAppSaved && !item.smsSubmitted
+      (item) => !item.smsSubmitted
     ).length;
 
     return res.status(201).json({
-      message: `In-app notifications saved for ${inAppSaved} resident(s). SMS submitted for ${smsSubmitted} resident(s).`,
+      message: `SMS submitted for ${smsSubmitted} resident(s). Failed for ${smsFailed} resident(s).`,
       summary: {
         totalResidents: residents.length,
-        inAppSaved,
+        inAppSaved: 0,
         smsSubmitted,
         smsFailed,
       },
       results,
     });
   } catch (error) {
-    console.error("Send resident notification error:", error.message);
+    console.error("Send resident SMS error:", error.message);
 
     return res.status(500).json({
-      message: "Failed to send resident notification",
+      message: "Failed to send resident SMS",
     });
   }
 });
