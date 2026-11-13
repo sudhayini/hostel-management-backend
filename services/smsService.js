@@ -7,10 +7,17 @@ const client = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// Twilio trial accounts require an approved template.
 async function sendSMS(to, message) {
-  if (!process.env.TWILIO_PHONE_NUMBER) {
-    throw new Error("TWILIO_PHONE_NUMBER is missing in .env");
+  if (!process.env.TWILIO_ACCOUNT_SID) {
+    throw new Error("TWILIO_ACCOUNT_SID is missing");
+  }
+
+  if (!process.env.TWILIO_AUTH_TOKEN) {
+    throw new Error("TWILIO_AUTH_TOKEN is missing");
+  }
+
+  if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+    throw new Error("TWILIO_MESSAGING_SERVICE_SID is missing");
   }
 
   if (!to) {
@@ -18,6 +25,7 @@ async function sendSMS(to, message) {
   }
 
   const digits = String(to).replace(/\D/g, "");
+
   const phoneDigits =
     digits.startsWith("91") && digits.length === 12
       ? digits.slice(2)
@@ -27,9 +35,13 @@ async function sendSMS(to, message) {
     throw new Error("Enter a valid 10-digit Indian mobile number");
   }
 
+  if (typeof message !== "string" || !message.trim()) {
+    throw new Error("SMS message is required");
+  }
+
   const result = await client.messages.create({
     to: `+91${phoneDigits}`,
-    from: process.env.TWILIO_PHONE_NUMBER,
+    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
     body: "sms_appointment_reminders",
   });
 
