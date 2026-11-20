@@ -33,9 +33,10 @@ async function sendSMS(to, message) {
   );
 
   const result = await client.messages.create({
-    to: `+91${phoneDigits}`,
-    body: "sms_appointment_reminders",
-  });
+  to: `+91${phoneDigits}`,
+  from: process.env.TWILIO_PHONE_NUMBER,
+  body: "sms_account_alerts",
+});
 
   console.log("Twilio SMS SID:", result.sid);
   console.log("Twilio SMS status:", result.status);
