@@ -4,7 +4,7 @@ const Notification = require("../models/notification");
 const authMiddleware = require("../middleware/authmiddleware");
 const { sendSMS } = require("../services/smsService");
 const Resident = require("../models/Resident");
-
+const User = require("../models/user");
 const router = express.Router();
 
 const allowedTypes = [
@@ -64,6 +64,123 @@ router.get("/", authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       message: "Failed to fetch notifications",
+    });
+  }
+});
+
+// Send an in-app notification to one resident or all residents.
+router.post("/send-in-app", authMiddleware, async (req, res) => {
+  try {
+    if (!["admin", "staff"].includes(req.user.role)) {
+      return res.status(403).json({
+        message: "Only admin or staff can send notifications",
+      });
+    }
+
+    const {
+      residentId,
+      sendToAll = false,
+      message,
+      type = "General",
+    } = req.body;
+
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        message: "Notification message is required",
+      });
+    }
+
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({
+        message: "Invalid notification type",
+      });
+    }
+
+    if (typeof sendToAll !== "boolean") {
+      return res.status(400).json({
+        message: "sendToAll must be true or false",
+      });
+    }
+
+    if (!sendToAll && !residentId) {
+      return res.status(400).json({
+        message: "Please select a resident",
+      });
+    }
+
+    const residents = sendToAll
+      ? await Resident.find({})
+      : [await Resident.findById(residentId)].filter(Boolean);
+
+    if (residents.length === 0) {
+      return res.status(404).json({
+        message: "No residents found",
+      });
+    }
+
+    const residentEmails = residents.map((resident) =>
+      resident.email.trim().toLowerCase()
+    );
+
+    const users = await User.find({
+      role: "resident",
+    });
+
+    const userMap = new Map(
+      users.map((user) => [
+        user.email.trim().toLowerCase(),
+        user,
+      ])
+    );
+
+    const notificationDocs = [];
+    const results = [];
+
+    for (const resident of residents) {
+      const user = userMap.get(
+        resident.email.trim().toLowerCase()
+      );
+
+      if (!user) {
+        results.push({
+          resident: resident.name,
+          saved: false,
+          error: "Resident login account not found",
+        });
+        continue;
+      }
+
+      notificationDocs.push({
+        userId: user._id,
+        message: message.trim(),
+        type,
+      });
+
+      results.push({
+        resident: resident.name,
+        saved: true,
+      });
+    }
+
+    if (notificationDocs.length > 0) {
+      await Notification.insertMany(notificationDocs);
+    }
+
+    const inAppSaved = notificationDocs.length;
+
+    return res.status(201).json({
+      message: `In-app notifications saved for ${inAppSaved} resident(s).`,
+      summary: {
+        totalResidents: residents.length,
+        inAppSaved,
+      },
+      results,
+    });
+  } catch (error) {
+    console.error("Send in-app notification error:", error.message);
+
+    return res.status(500).json({
+      message: "Failed to send in-app notification",
     });
   }
 });
