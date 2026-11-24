@@ -1,5 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 
 const Resident = require("../models/Resident");
 const User = require("../models/user");
@@ -196,6 +197,19 @@ router.post(
         });
       }
 
+      const existingUser = await User.findOne({
+  email: email.trim().toLowerCase(),
+});
+
+if (existingUser) {
+  return res.status(400).json({
+    message: "A login account with this email already exists",
+  });
+}
+
+const temporaryPassword = crypto.randomBytes(9).toString("base64url");
+const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
       const resident = await Resident.create({
         name: name.trim(),
         phone,
@@ -209,11 +223,23 @@ router.post(
         preferredRoomType: preferredRoomType || "Any",
       });
 
+
+      const user = await User.create({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: hashedPassword,
+        role: "resident",
+      });
+
       if (roomNumber) {
         await updateRoomOccupancy(roomNumber);
       }
 
-      return res.status(201).json({ resident });
+      return res.status(201).json({
+        message: "Resident and login account created successfully",
+        resident,
+        temporaryPassword,
+      });
     } catch (error) {
       console.error("Create resident error:", error);
 
