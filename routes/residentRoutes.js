@@ -207,7 +207,11 @@ if (existingUser) {
   });
 }
 
-const temporaryPassword = crypto.randomBytes(9).toString("base64url");
+const temporaryPassword = process.env.INITIAL_RESIDENT_PASSWORD;
+
+if (!temporaryPassword) {
+  throw new Error("Initial resident password is not configured");
+}
 const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
       const resident = await Resident.create({
