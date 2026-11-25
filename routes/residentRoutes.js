@@ -155,6 +155,11 @@ router.post(
         preferredRoomType,
       } = req.body;
 
+      const assignedRoomNumber =
+        roomNumber && roomNumber !== "Not Allocated"
+          ? roomNumber
+          : "";
+
       if (!name || !phone || !email) {
         return res.status(400).json({
           message: "Name, phone and email are required",
@@ -167,25 +172,29 @@ router.post(
         });
       }
 
-      if (roomNumber) {
-        const room = await Room.findOne({ roomNumber });
+      if (assignedRoomNumber) {
+  const room = await Room.findOne({
+    roomNumber: assignedRoomNumber,
+  });
 
-        if (!room) {
-          return res.status(400).json({ message: "Room not found" });
-        }
+  if (!room) {
+    return res.status(400).json({ message: "Room not found" });
+  }
 
-        if (room.status === "Maintenance") {
-          return res.status(400).json({
-            message: "Cannot allocate a room under maintenance",
-          });
-        }
+  if (room.status === "Maintenance") {
+    return res.status(400).json({
+      message: "Cannot allocate a room under maintenance",
+    });
+  }
 
-        const occupied = await Resident.countDocuments({ roomNumber });
+  const occupied = await Resident.countDocuments({
+    roomNumber: assignedRoomNumber,
+  });
 
-        if (occupied >= room.capacity) {
-          return res.status(400).json({ message: "Room is full" });
-        }
-      }
+  if (occupied >= room.capacity) {
+    return res.status(400).json({ message: "Room is full" });
+  }
+}
 
       const existingResident = await Resident.findOne({
         email: email.trim().toLowerCase(),
@@ -218,7 +227,7 @@ const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
         name: name.trim(),
         phone,
         email: email.trim(),
-        roomNumber: roomNumber || "",
+        roomNumber: assignedRoomNumber,
         emergencyContactName: emergencyContactName || "",
         emergencyContactPhone: emergencyContactPhone || "",
         checkInDate: checkInDate || null,
@@ -235,8 +244,8 @@ const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
         role: "resident",
       });
 
-      if (roomNumber) {
-        await updateRoomOccupancy(roomNumber);
+      if (assignedRoomNumber) {
+        await updateRoomOccupancy(assignedRoomNumber);
       }
 
       return res.status(201).json({
@@ -279,32 +288,39 @@ router.put(
         preferredRoomType,
       } = req.body;
 
+      const assignedRoomNumber =
+        roomNumber && roomNumber !== "Not Allocated"
+          ? roomNumber
+          : "";
+
       const previousRoomNumber = resident.roomNumber || "";
       const changingRoom = roomNumber !== undefined &&
-        roomNumber !== previousRoomNumber;
+            assignedRoomNumber !== previousRoomNumber;
 
-      if (changingRoom && roomNumber) {
-        const newRoom = await Room.findOne({ roomNumber });
+      if (changingRoom && assignedRoomNumber) {
+  const newRoom = await Room.findOne({
+    roomNumber: assignedRoomNumber,
+  });
 
-        if (!newRoom) {
-          return res.status(400).json({ message: "Room not found" });
-        }
+  if (!newRoom) {
+    return res.status(400).json({ message: "Room not found" });
+  }
 
-        if (newRoom.status === "Maintenance") {
-          return res.status(400).json({
-            message: "Cannot allocate a room under maintenance",
-          });
-        }
+  if (newRoom.status === "Maintenance") {
+    return res.status(400).json({
+      message: "Cannot allocate a room under maintenance",
+    });
+  }
 
-        const occupied = await Resident.countDocuments({
-          roomNumber,
-          _id: { $ne: resident._id },
-        });
+  const occupied = await Resident.countDocuments({
+    roomNumber: assignedRoomNumber,
+    _id: { $ne: resident._id },
+  });
 
-        if (occupied >= newRoom.capacity) {
-          return res.status(400).json({ message: "Room is full" });
-        }
-      }
+  if (occupied >= newRoom.capacity) {
+    return res.status(400).json({ message: "Room is full" });
+  }
+}
 
       if (name !== undefined) resident.name = name;
       if (phone !== undefined) resident.phone = phone;
@@ -328,7 +344,7 @@ router.put(
 
       if (changingRoom) {
         // Close the previous room-history entry.
-        const activeHistory = [...resident.roomHistory]
+        const activeHistory = [...(resident.roomHistory || [])]
           .reverse()
           .find(
             (entry) =>
@@ -339,15 +355,17 @@ router.put(
         if (activeHistory) {
           activeHistory.checkOutDate = new Date();
         }
+ 
+        resident.roomNumber = assignedRoomNumber;    
 
-        resident.roomNumber = roomNumber || "";
-
-        if (roomNumber) {
+        if (assignedRoomNumber) {
           const newCheckInDate = checkInDate || new Date();
 
           resident.checkInDate = newCheckInDate;
+          resident.roomHistory = resident.roomHistory || [];
+
           resident.roomHistory.push({
-            roomNumber,
+            roomNumber: assignedRoomNumber,
             checkInDate: newCheckInDate,
             checkOutDate: null,
           });
